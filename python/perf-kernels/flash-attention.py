@@ -752,6 +752,7 @@ def _attn_bwd(Q, K, V, sm_scale,
               stride_z, stride_h, stride_tok, stride_d,
               # H = 16, N_CTX = 1024
               H, N_CTX,
+              CAUSAL: tl.constexpr,
               BLOCK_DMODEL: tl.constexpr,
               BLOCK_M1: tl.constexpr,
               BLOCK_N1: tl.constexpr,
@@ -822,7 +823,7 @@ def _attn_bwd(Q, K, V, sm_scale,
                             H, N_CTX,
                             MASK_BLOCK_M1, BLOCK_N1, BLOCK_DMODEL,
                             start_n, start_m, num_steps,
-                            MASK=True
+                            MASK=CAUSAL
                             )
 
     start_m += num_steps * MASK_BLOCK_M1
@@ -906,7 +907,7 @@ def _attn_bwd(Q, K, V, sm_scale,
                       H, N_CTX,
                       BLOCK_M2, MASK_BLOCK_N2, BLOCK_DMODEL,
                       start_m, end_n - num_steps * MASK_BLOCK_N2, num_steps,
-                      MASK=True
+                      MASK=CAUSAL
                       )
     end_n -= num_steps * MASK_BLOCK_N2
     # stage 2
@@ -1075,6 +1076,7 @@ class _attention(torch.autograd.Function):
             M, delta,
             q.stride(0), q.stride(1), q.stride(2), q.stride(3),
             N_HEAD, N_CTX,
+            CAUSAL=ctx.causal,
             BLOCK_DMODEL=ctx.BLOCK_DMODEL,
             BLOCK_M1=BLOCK_M1, BLOCK_N1=BLOCK_N1, BLOCK_M2=BLOCK_M2, BLOCK_N2=BLOCK_N2,
             BLK_SLICE_FACTOR=BLK_SLICE_FACTOR,
@@ -1340,7 +1342,7 @@ def test_op_varlen_mqa_fwd(Z, HQ, HK, N_CTX, D_HEAD, causal, dtype=torch.float16
                           ])
 @pytest.mark.parametrize('qseqlen_not_equal_kseqlen', [None])
 @pytest.mark.parametrize('torch_sdpa_test', [True])
-@pytest.mark.parametrize('causal', [True])
+@pytest.mark.parametrize('causal', [False, True])
 def test_op_bwd(Z, H, N_CTX, D_HEAD, qseqlen_not_equal_kseqlen, causal, torch_sdpa_test, dtype=torch.float16):
     torch.manual_seed(20)
     if qseqlen_not_equal_kseqlen is not None:
