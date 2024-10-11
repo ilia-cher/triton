@@ -19,8 +19,8 @@ __global__ void fa_mfma(
   const float16_t *Kblock = K;
   const float16_t *Vblock = V;
 
-  __shared__ float16_t Ks[32 * 8 * 4]; // 4 32x8 tiles
-  __shared__ float16_t Vs[8 * 32 * 4]; // 4 8x32 tiles
+  __shared__ float16_t Ks[32 * 8 * FA_MFMA_K_BLOCKS];
+  __shared__ float16_t Vs[8 * 32 * FA_MFMA_K_BLOCKS];
 
   float16x4 Qreg[FA_MFMA_K_BLOCKS];
 
@@ -32,57 +32,46 @@ __global__ void fa_mfma(
   for (int nBlockIdx = 0; nBlockIdx < CEIL_DIV(NCTX, 32); ++nBlockIdx) {
     const float16_t *Qtile = Qstripe;
     const float16_t *Ktile = Kblock + K_IDX(32 * nBlockIdx, 0);
-    const float16_t *Vtile = Vblock + V_IDX(32 * nBlockIdx, 0);
+    float16_t *Kstile = Ks;
 
-    // First GEMM
-    floatx16 acc = {0.0};
+    // Preload K
     for (int kOuterBlockIdx = 0; 
              kOuterBlockIdx < FA_MFMA_K_BLOCKS;
-             kOuterBlockIdx += 4) {
-
-      // Collectively (pre)load 4 K tiles (32x8, 32x32)
-      // into shared memory
-      float16_t *Kstile = Ks;
+             kOuterBlockIdx += 4) {      
       const int ksx = 2 * threadIdx.y + threadIdx.x / 32;
       const int ksy = threadIdx.x % 32;
       const int stepLines = 2 * FA_MFMA_NWAVES;
       for (int lines = 0; lines < 32; lines += stepLines) {
         Kstile[R32_IDX(lines + ksx, ksy)] = Ktile[K_IDX(lines + ksx, ksy)];  
       }
-/*
-      const int ksx = threadIdx.x % 32;
-      const int ksy = 2 * threadIdx.y + threadIdx.x / 32;
-      const int stepLines = 2 * FA_MFMA_NWAVES;
-      for (int cols = 0; cols < 32; cols += stepLines) {
-        Kstile[R32_IDX(ksx, cols + ksy)] = Ktile[K_IDX(ksx, cols + ksy)];
-      }
-*/
+
       Ktile += K_IDX(0, 32);
+      Kstile += R32_IDX(32, 0);
+    }
+    __syncthreads();
 
-      __syncthreads();
+    Kstile = Ks;
 
-      for (int kBlockIdx = kOuterBlockIdx;
-               kBlockIdx < kOuterBlockIdx + 4;
-               ++kBlockIdx) {
+    // First GEMM
+    floatx16 acc = {0.0};
+    for (int kBlockIdx = 0;
+             kBlockIdx < FA_MFMA_K_BLOCKS;
+             ++kBlockIdx) {
 
-        if (nBlockIdx == 0) {
-          mfma_reg_load_Qtile(Qreg[kBlockIdx], Qtile);
-        }
-
-        float16x4 Kreg;
-        mfma_reg_load_Kstile(Kreg, Kstile);
-
-        // Switching Q and K tiles results in acc transposed and
-        // enables efficient softmax on acc -
-        // in MFMA layout, lanes sweep transposed acc along Q, allowing
-        // us to compute row-wise reductions easily.
-        acc = __builtin_amdgcn_mfma_f32_32x32x8f16(Kreg, Qreg[kBlockIdx], acc, 0, 0, 0);
-      
-        Qtile += Q_IDX(0, 8);
-        Kstile += R32_IDX(0, 8);
+      if (nBlockIdx == 0) {
+        mfma_reg_load_Qtile(Qreg[kBlockIdx], Qtile);
       }
 
-      __syncthreads();
+      float16x4 Kreg;
+      mfma_reg_load_Kstile(Kreg, Kstile);
+
+      acc = __builtin_amdgcn_mfma_f32_32x32x8f16(Kreg, Qreg[kBlockIdx], acc, 0, 0, 0);
+    
+      Qtile += Q_IDX(0, 8);
+      Kstile += R32_IDX(0, 8);
+      if ((kBlockIdx + 1) % 4 == 0) {
+        Kstile += R32_IDX(31, 0);
+      }
     }
 
     float16x4 accP[4];
@@ -113,15 +102,11 @@ __global__ void fa_mfma(
     float rowsum = rowsum1 + rowsum2;
     L += rowsum;
     
-    // Second GEMM
+    // Preload V
+    //
+    const float16_t *Vtile = Vblock + V_IDX(32 * nBlockIdx, 0);
+    float16_t *Vstile = Vs;
     for (int outerIdx = 0; outerIdx < FA_MFMA_O_NACC; ++outerIdx) {
-      // Correct accO using the new running max
-      for (int idx = 0; idx < 16; ++idx) {
-        accO[outerIdx][idx] *= alpha;
-      }
-
-      // Collectively (pre)load 32/8==4 tiles (8x32) of V
-      float16_t *Vstile = Vs;
       const int vsx = 2 * threadIdx.y + threadIdx.x / 32;
       const int vsy = threadIdx.x % 32;
       const int stepLines = 2 * FA_MFMA_NWAVES;
@@ -129,21 +114,27 @@ __global__ void fa_mfma(
         Vstile[R32_IDX(lines + vsx, vsy)] = Vtile[V_IDX(lines + vsx, vsy)];  
       }
       Vtile += V_IDX(0, 32);
+      Vstile += R32_IDX(32, 0);
+    }
+    __syncthreads();
 
-      __syncthreads();
+    Vstile = Vs;
 
-      for (int idx = 0; idx < 4; ++idx) {
+    // Second GEMM
+    for (int outerIdx = 0; outerIdx < FA_MFMA_O_NACC; ++outerIdx) {
+      // Correct accO using the new running max
+      for (int accIdx = 0; accIdx < 16; ++accIdx) {
+        accO[outerIdx][accIdx] *= alpha;
+      }
+
+      for (int pIdx = 0; pIdx < 4; ++pIdx) {
         float16x4 Vreg;
         mfma_reg_load_Vstile(Vreg, Vstile);
 
-        // Switch P and V to make accO compatible
-        // with alpha, L
-        accO[outerIdx] = __builtin_amdgcn_mfma_f32_32x32x8f16(Vreg, accP[idx], accO[outerIdx], 0, 0, 0);
+        accO[outerIdx] = __builtin_amdgcn_mfma_f32_32x32x8f16(Vreg, accP[pIdx], accO[outerIdx], 0, 0, 0);
 
         Vstile += R32_IDX(8, 0);
       }
-
-      __syncthreads();
     }
   }  // nBlockIdx
 

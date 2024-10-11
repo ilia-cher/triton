@@ -6,7 +6,6 @@
 enum class TestFAKernel {
   NAIVE,
   MFMA,
-  MFMA_PRELOAD,
   MFMA_PINGPONG
 };
 
@@ -47,13 +46,6 @@ void launchFA(
         dQ, dK, dV,
         dO
       );
-    } else if (krnl == TestFAKernel::MFMA_PRELOAD) {
-      dim3 gridDim(CEIL_DIV(NCTX, FA_MFMA_BLOCK_M), BH, 1);
-      dim3 blockDim(64, FA_MFMA_NWAVES, 1);
-      fa_mfma_preload <<<gridDim, blockDim>>> (
-        dQ, dK, dV,
-        dO
-      );
     } else if (krnl == TestFAKernel::MFMA_PINGPONG) {
       dim3 gridDim(CEIL_DIV(NCTX, FA_MFMA_BLOCK_M), BH, 1);
       dim3 blockDim(64, FA_MFMA_NWAVES, 1);
@@ -89,7 +81,7 @@ int main() {
   float16_t *hO_attn_ref = new float16_t[BH * NCTX * DHEAD];
   float16_t *hO_ref = new float16_t[BH * NCTX * DHEAD];
   float16_t *hO_naive = new float16_t[BH * NCTX * DHEAD];
-  float16_t *hO_mfma_preload = new float16_t[BH * NCTX * DHEAD];
+  float16_t *hO_mfma = new float16_t[BH * NCTX * DHEAD];
   float16_t *hO_mfma_pp = new float16_t[BH * NCTX * DHEAD];
 
   std::cout << "Initializing tensors... ";
@@ -118,9 +110,9 @@ int main() {
     hO_naive);
   
   launchFA(
-    TestFAKernel::MFMA_PRELOAD,
+    TestFAKernel::MFMA,
     hQ, hK, hV,
-    hO_mfma_preload);
+    hO_mfma);
 
   launchFA(
     TestFAKernel::MFMA_PINGPONG,
@@ -129,14 +121,14 @@ int main() {
 
   //std::cout << "attn_ref/ref :  " << (checkFAResult(hO_attn_ref, hO_ref) ? "OK" : "FAIL") << "\n";
   std::cout << "naive/ref    :  " << (checkFAResult(hO_naive, hO_ref) ? "OK" : "FAIL") << "\n";
-  std::cout << "mfma/ref     :  " << (checkFAResult(hO_mfma_preload, hO_ref) ? "OK" : "FAIL") << "\n";
+  std::cout << "mfma/ref     :  " << (checkFAResult(hO_mfma, hO_ref) ? "OK" : "FAIL") << "\n";
   std::cout << "mfma_pp/ref  :  " << (checkFAResult(hO_mfma_pp, hO_ref) ? "OK" : "FAIL") << "\n\n";
 
   //
   // Cleanup
   //
   delete[] hO_mfma_pp;
-  delete[] hO_mfma_preload;
+  delete[] hO_mfma;
   delete[] hO_naive;
   delete[] hO_ref;
   delete[] hO_attn_ref;

@@ -71,13 +71,6 @@ __global__ void fa_mfma(
     float16_t *Ob);
 
 //__launch_bounds__(FA_MFMA_NTHREADS, 1)
-__global__ void fa_mfma_preload(
-    const float16_t *Qb,
-    const float16_t *Kb,
-    const float16_t *Vb,
-    float16_t *Ob);
-
-//__launch_bounds__(FA_MFMA_NTHREADS, 1)
 __global__ void fa_mfma_pingpong(
     const float16_t *Qb,
     const float16_t *Kb,

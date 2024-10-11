@@ -34,53 +34,6 @@ __global__ void gemm_naive(
   }
 }
 
-// As: [SMEM_BLOCK_M, SMEM_BLOCK_K]
-#define SMEM_AS_IDX(I, J) ((I) * SMEM_BLOCK_K + (J))
-// Bs: [SMEM_BLOCK_K, SMEM_BLOCK_N]
-#define SMEM_BS_IDX(I, J) ((I) + (J) * SMEM_BLOCK_K)
-
-__launch_bounds__(SMEM_NTHREADS, 1)
-__global__ void gemm_smem(
-    int M, int N, int K,
-    float alpha, const float16_t *A, const float16_t *B,
-    float beta, float *C) {
-
-  __shared__ float16_t As[SMEM_BLOCK_M * SMEM_BLOCK_K];
-  __shared__ float16_t Bs[SMEM_BLOCK_K * SMEM_BLOCK_N];
-
-  const float16_t *Astart = A + A_IDX(blockIdx.x * SMEM_BLOCK_M, 0);
-  const float16_t *Bstart = B + B_IDX(0, blockIdx.y * SMEM_BLOCK_N);
-  const float16_t *Bsw = Bs + SMEM_BS_IDX(0, threadIdx.y * SMEM_WAVE_NOUTPUTS);
-
-  float results[SMEM_WAVE_NOUTPUTS] = {0.0};
-
-  for (int kBlockStart = 0; kBlockStart < K; kBlockStart += SMEM_BLOCK_K) {
-    As[SMEM_AS_IDX(threadIdx.x, threadIdx.y)] = Astart[A_IDX(threadIdx.x, threadIdx.y)];
-    Bs[SMEM_BS_IDX(threadIdx.y, threadIdx.x)] = Bstart[B_IDX(threadIdx.y, threadIdx.x)];
-
-    __syncthreads();
-
-    Astart += A_IDX(0, SMEM_BLOCK_K);
-    Bstart += B_IDX(SMEM_BLOCK_K, 0);
-
-    for (int k = 0; k < SMEM_BLOCK_K; ++k) {
-      float Atmp = As[SMEM_AS_IDX(threadIdx.x, k)];
-      for (int outIdx = 0; outIdx < SMEM_WAVE_NOUTPUTS; ++outIdx) {
-        results[outIdx] += Atmp * Bsw[SMEM_BS_IDX(k, outIdx)];
-      }
-    }
-
-    __syncthreads();
-  }
-
-  const int m = blockIdx.x * SMEM_BLOCK_M + threadIdx.x;  // threadIdx.x == lane
-  const int n = blockIdx.y * SMEM_BLOCK_N + threadIdx.y * SMEM_WAVE_NOUTPUTS;  //
-
-  for (int outIdx = 0; outIdx < SMEM_WAVE_NOUTPUTS; ++outIdx) {
-    C[C_IDX(m, n + outIdx)] = alpha * results[outIdx] + beta * C[C_IDX(m, n + outIdx)];
-  }
-}
-
 #define MFMA_K_OUTER_SIZE 128
 #define MFMA_K_BLOCKS ((MFMA_K_OUTER_SIZE) / 8)
 #define MFMA_K_BLOCK_STEP 4

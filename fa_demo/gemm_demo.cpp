@@ -8,7 +8,6 @@ rocblas_handle handle;
 enum class TestGemmKernel {
   ROCBLAS,
   NAIVE,
-  SMEM,
   MFMA
 };
 
@@ -76,14 +75,6 @@ void launchGemm(
       alpha, dA, dB,
       beta, dC
     );
-  } else if (krnl == TestGemmKernel::SMEM) {
-    dim3 gridDim(CEIL_DIV(M, SMEM_BLOCK_M), CEIL_DIV(N, SMEM_BLOCK_N), 1);
-    dim3 blockDim(64, SMEM_NWAVES, 1);
-    gemm_smem <<<gridDim, blockDim>>> (
-      M, N, K,
-      alpha, dA, dB,
-      beta, dC
-    );
   } else if (krnl == TestGemmKernel::MFMA) {
     dim3 gridDim(CEIL_DIV(M, MFMA_BLOCK_M), CEIL_DIV(N, MFMA_BLOCK_N), 1);
     dim3 blockDim(64, MFMA_NWAVES, 1);
@@ -124,7 +115,6 @@ int main() {
   float *hC_ref = new float[M * N];
   float *hC_naive = new float[M * N];
   float *hC_blas = new float[M * N];
-  float *hC_smem = new float[M * N];
   float *hC_mfma = new float[M * N];
 
   std::cout << "Initializing tensors... ";
@@ -133,7 +123,6 @@ int main() {
   initBuffer<float>(hC_ref, M * N);
   memcpy(hC_naive, hC_ref, M * N * sizeof(float));
   memcpy(hC_blas, hC_ref, M * N * sizeof(float));
-  memcpy(hC_smem, hC_ref, M * N * sizeof(float));
   memcpy(hC_mfma, hC_ref, M * N * sizeof(float));
   std::cout << "done\n\n";
 
@@ -167,13 +156,6 @@ int main() {
   );
 
   launchGemm(
-    TestGemmKernel::SMEM,
-    M, N, K,
-    alpha, hA, hB,
-    beta, hC_smem
-  );
-
-  launchGemm(
     TestGemmKernel::MFMA,
     M, N, K,
     alpha, hA, hB,
@@ -182,14 +164,12 @@ int main() {
 
   std::cout << "rocBLAS/ref  :  " << (checkGemmResult(M, N, hC_blas, hC_ref) ? "OK" : "FAIL") << "\n";
   std::cout << "naive/ref    :  " << (checkGemmResult(M, N, hC_naive, hC_ref) ? "OK" : "FAIL") << "\n";
-  std::cout << "smem/ref     :  " << (checkGemmResult(M, N, hC_smem, hC_ref) ? "OK" : "FAIL") << "\n";
   std::cout << "mfma/ref     :  " << (checkGemmResult(M, N, hC_mfma, hC_ref) ? "OK" : "FAIL") << "\n\n";
 
   //
   // Cleanup
   //
   delete[] hC_mfma;
-  delete[] hC_smem;
   delete[] hC_blas;
   delete[] hC_naive;
   delete[] hC_ref;
