@@ -4,7 +4,7 @@
 #include "common.h"
 
 #define NCTX (16 * 1024)
-#define BH 16
+#define BH (4 * 48)
 #define DHEAD 128
 #define ISQRTD 0.08838834764831845
 
@@ -16,6 +16,7 @@
 
 bool checkFAResult(
     const float16_t *res, const float16_t *ref,
+    const int firstM = 0,
     const float atol = DEFAULT_ATOL,
     const float rtol = DEFAULT_RTOL);
 

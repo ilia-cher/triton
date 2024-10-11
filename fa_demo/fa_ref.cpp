@@ -1,15 +1,17 @@
 #include "fa_kernels.h"
 
 #include <hip/hip_runtime.h>
-//#include <iostream>
 
 void attn_ref(
     const float16_t *Qb,  // [BH x NCTX x DHEAD]
     const float16_t *Kb,
     const float16_t *Vb,
-    float16_t *Ob) {
+    float16_t *Ob,
+    int firstM) {
   float *P = new float[NCTX * NCTX];
   float *O_fp32 = new float[NCTX * DHEAD];
+
+  const int maxM = (firstM > 0) ? firstM : NCTX;
 
   for (int bh = 0; bh < BH; ++bh) {
     const float16_t *Q = Qb + bh * NCTX * DHEAD;
@@ -18,13 +20,12 @@ void attn_ref(
     float16_t *O = Ob + bh * NCTX * DHEAD;
 
     #pragma omp parallel for
-    for (int m = 0; m < NCTX; ++m) {
+    for (int m = 0; m < maxM; ++m) {
       for (int k = 0; k < DHEAD; ++k) {
         O_fp32[O_IDX(m, k)] = 0.0;
       }
 
       float row_max = -std::numeric_limits<float>::infinity();
-      //float row_min = std::numeric_limits<float>::infinity();
       for (int n = 0; n < NCTX; ++n) {
         float tmp = 0.0;
         for (int k = 0; k < DHEAD; ++k) {
@@ -37,9 +38,6 @@ void attn_ref(
         if (row_max < tmp) {
           row_max = tmp;
         }
-        //if (row_min > tmp) {
-        //  row_min = tmp;
-        //}
       }
 
       float row_sumexp = 0.0;
@@ -81,8 +79,11 @@ void fa_ref(
     const float16_t *Qb,  // [BH x NCTX x DHEAD]
     const float16_t *Kb,
     const float16_t *Vb,
-    float16_t *Ob) {
+    float16_t *Ob,
+    int firstM) {
   float *O_fp32 = new float[NCTX * DHEAD];
+
+  const int maxM = (firstM > 0) ? firstM : NCTX;
 
   for (int bh = 0; bh < BH; ++bh) {
     const float16_t *Q = Qb + bh * NCTX * DHEAD;
@@ -90,10 +91,8 @@ void fa_ref(
     const float16_t *V = Vb + bh * NCTX * DHEAD;
     float16_t *O = Ob + bh * NCTX * DHEAD;
 
-    //std::cout << (bh + 1) << " " << std::flush;
-
     #pragma omp parallel for
-    for (int m = 0; m < NCTX; ++m) {
+    for (int m = 0; m < maxM; ++m) {
       for (int k = 0; k < DHEAD; ++k) {
         O_fp32[O_IDX(m, k)] = 0.0;
       }

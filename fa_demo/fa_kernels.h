@@ -7,13 +7,15 @@ void attn_ref(
     const float16_t *Qb,
     const float16_t *Kb,
     const float16_t *Vb,
-    float16_t *Ob);
+    float16_t *Ob,
+    int firstM = 0);
 
 void fa_ref(
     const float16_t *Qb,
     const float16_t *Kb,
     const float16_t *Vb,
-    float16_t *Ob);
+    float16_t *Ob,
+    int firstM = 0);
 
 #define FA_NAIVE_NWAVES 8
 #define FA_NAIVE_NTHREADS (FA_NAIVE_NWAVES * 64)
