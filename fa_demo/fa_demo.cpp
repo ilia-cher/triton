@@ -6,7 +6,7 @@
 enum class TestFAKernel {
   NAIVE,
   MFMA,
-  MFMA_PINGPONG
+  MFMA_PP
 };
 
 void launchFA(
@@ -46,10 +46,10 @@ void launchFA(
         dQ, dK, dV,
         dO
       );
-    } else if (krnl == TestFAKernel::MFMA_PINGPONG) {
+    } else if (krnl == TestFAKernel::MFMA_PP) {
       dim3 gridDim(CEIL_DIV(NCTX, FA_MFMA_BLOCK_M), BH, 1);
       dim3 blockDim(64, FA_MFMA_NWAVES, 1);
-      fa_mfma_pingpong <<<gridDim, blockDim>>> (
+      fa_mfma_pp <<<gridDim, blockDim>>> (
         dQ, dK, dV,
         dO
       );
@@ -117,7 +117,7 @@ int main() {
     hO_mfma);
 
   launchFA(
-    TestFAKernel::MFMA_PINGPONG,
+    TestFAKernel::MFMA_PP,
     hQ, hK, hV,
     hO_mfma_pp);
 
