@@ -20,7 +20,9 @@ __global__ void fa_mfma(
   const float16_t *V_stripe = V;
 
   __shared__ float16_t KS[32 * 8 * FA_MFMA_K_BLOCKS];
+  __shared__ float16_t KS_next[32 * 8 * FA_MFMA_K_BLOCKS];
   __shared__ float16_t VS[8 * 32 * FA_MFMA_K_BLOCKS];
+  __shared__ float16_t VS_next[8 * 32 * FA_MFMA_K_BLOCKS];
 
   float16x4 Q_tile_reg[FA_MFMA_K_BLOCKS];
   const float16_t *Q_tile = Q_stripe;
@@ -33,15 +35,34 @@ __global__ void fa_mfma(
 
   floatx16 accO[4] = {{0.0}};
 
+  //
+  float16x8 K_stripe_reg;
+  mfma_load_K_stripe_to_reg(K_stripe_reg, K_stripe);
+
+  float16_t *KS_stripe = KS;
+  float16_t *KS_stripe_next = KS_next;
+  mfma_store_reg_to_KS_stripe(K_stripe_reg, KS_stripe);
+
+  float16x8 V_stripe_reg;
+  mfma_load_V_stripe_to_reg(V_stripe_reg, V_stripe);
+
+  float16_t *VS_stripe = VS;
+  float16_t *VS_stripe_next = VS_next;
+  mfma_store_reg_to_VS_stripe(V_stripe_reg, VS_stripe);
+
+  __syncthreads();
+  //
+
   const int nBlocks = CEIL_DIV(NCTX, 32);
   for (int nBlockIdx = 0; nBlockIdx < nBlocks; ++nBlockIdx) {
-    // Load K
-    float16x8 K_stripe_reg;
-    mfma_load_K_stripe_to_reg(K_stripe_reg, K_stripe);
+    // Prefetch the next stripes of K and V from HBM into the registers
+    if (nBlockIdx < nBlocks - 1) {
+      const float16_t *K_stripe_next = K_stripe + K_IDX(32, 0);
+      mfma_load_K_stripe_to_reg(K_stripe_reg, K_stripe_next);
 
-    float16_t *KS_stripe = KS;
-    mfma_store_reg_to_KS_stripe(K_stripe_reg, KS_stripe);
-    __syncthreads();
+      const float16_t *V_stripe_next = V_stripe + V_IDX(32, 0);
+      mfma_load_V_stripe_to_reg(V_stripe_reg, V_stripe_next);
+    }
 
     // First GEMM
 
@@ -85,14 +106,12 @@ __global__ void fa_mfma(
     float rowsum2 = __shfl(rowsum1, (threadIdx.x + 32) % 64);
     float rowsum = rowsum1 + rowsum2;
     L += rowsum;
-    
-    // Load V
-    float16x8 V_stripe_reg;
-    mfma_load_V_stripe_to_reg(V_stripe_reg, V_stripe);
 
-    float16_t *VS_stripe = VS;
-    mfma_store_reg_to_VS_stripe(V_stripe_reg, VS_stripe);
-    __syncthreads();
+    // Write the next stripes of K and V from the registers into LDS
+    if (nBlockIdx < nBlocks - 1) {
+      mfma_store_reg_to_KS_stripe(K_stripe_reg, KS_stripe_next);
+      mfma_store_reg_to_VS_stripe(V_stripe_reg, VS_stripe_next);
+    }
 
     // Second GEMM
 
@@ -119,8 +138,12 @@ __global__ void fa_mfma(
       }
     }
 
+    __syncthreads();
+
     K_stripe += K_IDX(32, 0);
     V_stripe += V_IDX(32, 0);
+    swap_ptr(KS_stripe, KS_stripe_next);
+    swap_ptr(VS_stripe, VS_stripe_next);
   }  // nBlockIdx
 
   float16_t *Otile = O + O_IDX(m, 0);

@@ -127,13 +127,6 @@ __global__ void gemm_naive(
     }                                                                             \
   }
 
-#define mfma_swap_ptr(ptr1, ptr2)   \
-  {                                 \
-    auto *tmp = ptr1;               \
-    ptr1 = ptr2;                    \
-    ptr2 = tmp;                     \
-  }
-
 __launch_bounds__(MFMA_NTHREADS, 1)
 __global__ void gemm_mfma(
     int M, int N, int K,
@@ -207,7 +200,7 @@ __global__ void gemm_mfma(
       // swap the buffers
       B_stripe += B_IDX(0, 32);
       C_tile += C_IDX(0, 32);
-      mfma_swap_ptr(BS_stripe, BS_stripe_next);
+      swap_ptr(BS_stripe, BS_stripe_next);
     }
   }
 }

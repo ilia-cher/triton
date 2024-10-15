@@ -17,4 +17,11 @@ using floatx16 = __attribute__((__vector_size__(16 * sizeof(float)))) float;
 
 #define R32_IDX(I, J) ((I) * 32 + (J))
 
+#define swap_ptr(ptr1, ptr2)   \
+  {                            \
+    auto *tmp = ptr1;          \
+    ptr1 = ptr2;               \
+    ptr2 = tmp;                \
+  }
+
 #endif  // COMMON_H
