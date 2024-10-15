@@ -22,11 +22,7 @@ __global__ void gemm_naive(
 #define MFMA_NWAVES 8
 #define MFMA_NTHREADS (MFMA_NWAVES * 64)
 #define MFMA_BLOCK_M (MFMA_NWAVES * 32)
-#define MFMA_BLOCK_N 1024
-
-#if MFMA_NWAVES != 4 && MFMA_NWAVES != 8
-#error "Expected 4 or 8 waves in MFMA GEMM"
-#endif
+#define MFMA_BLOCK_N 4096
 
 //__launch_bounds__(MFMA_NTHREADS, 1)
 __global__ void gemm_mfma(
