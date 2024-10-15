@@ -33,36 +33,65 @@ __global__ void fa_naive(
 #define FA_MFMA_BLOCK_M (FA_MFMA_NWAVES * 32)
 
 #define FA_MFMA_K_BLOCKS (DHEAD / 8)
-#define FA_MFMA_O_NACC (DHEAD / 32)
 
-#define mfma_reg_load_Qtile(reg, tile)      \
-  {                                         \
-    int tx = threadIdx.x % 32;              \
-    int ty = 4 * (threadIdx.x / 32);        \
-    reg[0] = tile[Q_IDX(tx, ty)];           \
-    reg[1] = tile[Q_IDX(tx, ty + 1)];       \
-    reg[2] = tile[Q_IDX(tx, ty + 2)];       \
-    reg[3] = tile[Q_IDX(tx, ty + 3)];       \
+#define mfma_load_Q_tile_to_reg(reg, tile)        \
+  {                                               \
+    int tx = threadIdx.x % 32;                    \
+    int ty = 4 * (threadIdx.x / 32);              \
+    reg = *((float16x4*)(tile + Q_IDX(tx, ty)));  \
+    reg[0] *= ISQRTD * LOG2_E;                    \
+    reg[1] *= ISQRTD * LOG2_E;                    \
+    reg[2] *= ISQRTD * LOG2_E;                    \
+    reg[3] *= ISQRTD * LOG2_E;                    \
   }
 
-#define mfma_reg_load_Kstile(reg, tile)        \
-  {                                            \
-    int tx = threadIdx.x % 32;                 \
-    int ty = 4 * (threadIdx.x / 32);           \
-    reg[0] = tile[R32_IDX(tx, ty)];            \
-    reg[1] = tile[R32_IDX(tx, ty + 1)];        \
-    reg[2] = tile[R32_IDX(tx, ty + 2)];        \
-    reg[3] = tile[R32_IDX(tx, ty + 3)];        \
+#define mfma_load_K_stripe_to_reg(reg, tile)                         \
+  {                                                                  \
+    const float16_t *K_wave_ptr = tile + K_IDX(threadIdx.y * 4, 0);  \
+    int kx = threadIdx.x / 16;                                       \
+    int ky = (threadIdx.x % 16) * 8;                                 \
+    reg = *((float16x8*)(K_wave_ptr + K_IDX(kx, ky)));               \
   }
 
-#define mfma_reg_load_Vstile(reg, tile)        \
-  {                                            \
-    int tx = 4 * (threadIdx.x / 32);           \
-    int ty = threadIdx.x % 32;                 \
-    reg[0] = tile[R32_IDX(tx, ty)];            \
-    reg[1] = tile[R32_IDX(tx + 1, ty)];        \
-    reg[2] = tile[R32_IDX(tx + 2, ty)];        \
-    reg[3] = tile[R32_IDX(tx + 3, ty)];        \
+#define _KS_IDX(T, I, J) ((T) * 256 + (I) * 8 + (J))
+
+#define mfma_store_reg_to_KS_stripe(reg, tile)           \
+  {                                                      \
+    int kst = threadIdx.x % 16;                          \
+    int ksx = threadIdx.y * 4 + (threadIdx.x / 16);      \
+    *((float16x8*)(tile + _KS_IDX(kst, ksx, 0))) = reg;  \
+  }
+
+#define mfma_load_KS_tile_to_reg(reg, tile)            \
+  {                                                    \
+    int tx = threadIdx.x % 32;                         \
+    int ty = 4 * (threadIdx.x / 32);                   \
+    reg = *((float16x4*)(tile + _KS_IDX(0, tx, ty)));  \
+  }
+
+#define mfma_load_V_stripe_to_reg(reg, tile)                         \
+  {                                                                  \
+    const float16_t *V_wave_ptr = tile + V_IDX(0, threadIdx.y * 16); \
+    int vx = (threadIdx.x % 4) * 8;                                  \
+    int vy = threadIdx.x / 4;                                        \
+    reg = *((float16x8*)(V_wave_ptr + V_IDX(vx, vy)));               \
+  }
+
+#define _VS_IDX(T1, T2, I, J) ((T1) * 1024 + (T2) * 256 + (I) * 8 + (J))
+
+#define mfma_store_reg_to_VS_stripe(reg, tile)                  \
+  {                                                             \
+    int vst1 = threadIdx.y / 2;                                 \
+    int vst2 = threadIdx.x % 4;                                 \
+    int vsx = (threadIdx.y % 2) * 16 + (threadIdx.x / 4);       \
+    *((float16x8*)(tile + _VS_IDX(vst1, vst2, vsx, 0))) = reg;  \
+  }
+
+#define mfma_load_VS_tile_to_reg(reg, tile)               \
+  {                                                       \
+    int vx = threadIdx.x % 32;                            \
+    int vy = 4 * (threadIdx.x / 32);                      \
+    reg = *((float16x4*)(tile + _VS_IDX(0, 0, vx, vy)));  \
   }
 
 //__launch_bounds__(FA_MFMA_NTHREADS, 1)

@@ -116,15 +116,15 @@ int main() {
     hQ, hK, hV,
     hO_mfma);
 
-  launchFA(
-    TestFAKernel::MFMA_PP,
-    hQ, hK, hV,
-    hO_mfma_pp);
+  //launchFA(
+  //  TestFAKernel::MFMA_PP,
+  //  hQ, hK, hV,
+  //  hO_mfma_pp);
 
   std::cout << "attn_ref/ref :  " << (checkFAResult(hO_attn_ref, hO_ref, /*firstM=*/ 64) ? "OK" : "FAIL") << "\n";
   std::cout << "naive/ref    :  " << (checkFAResult(hO_naive, hO_ref, /*firstM=*/ 64) ? "OK" : "FAIL") << "\n";
   std::cout << "mfma/ref     :  " << (checkFAResult(hO_mfma, hO_ref, /*firstM=*/ 64) ? "OK" : "FAIL") << "\n";
-  std::cout << "mfma_pp/ref  :  " << (checkFAResult(hO_mfma_pp, hO_ref, /*firstM=*/ 64) ? "OK" : "FAIL") << "\n\n";
+  //std::cout << "mfma_pp/ref  :  " << (checkFAResult(hO_mfma_pp, hO_ref, /*firstM=*/ 64) ? "OK" : "FAIL") << "\n\n";
 
   //
   // Cleanup

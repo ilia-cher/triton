@@ -8,7 +8,7 @@ __global__ void fa_mfma_pp(
     const float16_t *Kb,
     const float16_t *Vb,
     float16_t *Ob) {
-
+/*
   const float16_t *Q = Qb + blockIdx.y * NCTX * DHEAD;
   const float16_t *K = Kb + blockIdx.y * NCTX * DHEAD;
   const float16_t *V = Vb + blockIdx.y * NCTX * DHEAD;
@@ -241,4 +241,5 @@ __global__ void fa_mfma_pp(
     }
     Otile += O_IDX(0, 32);
   }
+*/
 }
